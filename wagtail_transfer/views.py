@@ -24,6 +24,12 @@ from django.contrib import messages
 from django.contrib.contenttypes.models import ContentType
 
 
+# After import show error for Models which were NOT created in response to being encountered in object references
+default_show_error_for_referenced_pages = False
+
+SHOW_ERROR_FOR_REFERENCED_PAGES = getattr(settings, 'SHOW_ERROR_FOR_REFERENCED_PAGES', default_show_error_for_referenced_pages)
+
+
 def pages_for_export(request, root_page_id):
     check_digest(str(root_page_id), request.GET.get('digest', ''))
 
@@ -249,6 +255,18 @@ def import_page(request):
     importer = ImportPlanner.for_page(source=request.POST['source_page_id'], destination=dest_page_id)
     importer.add_json(response.content)
     importer = import_missing_object_data(source, importer)
+
+    if SHOW_ERROR_FOR_REFERENCED_PAGES:
+        for page_id in dict(importer.failed_creations).values():
+            response = requests.get(
+                f"{base_url}api/chooser/pages/",
+                params={'id': page_id, 'digest': digest_for_source(source, f'id={page_id}')})
+            json_response = json.loads(response.content)
+            items = json_response.get('items')
+            if items:
+                title = items[0].get('admin_display_title')
+                messages.add_message(
+                    request, messages.ERROR, f'Unable to fetch referenced page <strong>{title}</strong>')
 
     if dest_page_id:
         return redirect('wagtailadmin_explore', dest_page_id)
