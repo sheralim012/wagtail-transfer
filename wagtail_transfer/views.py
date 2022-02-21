@@ -28,7 +28,8 @@ from django.contrib.contenttypes.models import ContentType
 # After import show error for Models which were NOT created in response to being encountered in object references
 default_show_error_for_referenced_pages = False
 
-SHOW_ERROR_FOR_REFERENCED_PAGES = getattr(settings, 'SHOW_ERROR_FOR_REFERENCED_PAGES', default_show_error_for_referenced_pages)
+SHOW_ERROR_FOR_REFERENCED_PAGES = getattr(
+    settings, 'SHOW_ERROR_FOR_REFERENCED_PAGES', default_show_error_for_referenced_pages)
 
 
 def pages_for_export(request, root_page_id):
@@ -267,16 +268,31 @@ def import_page(request):
     importer = import_missing_object_data(source, importer)
 
     if SHOW_ERROR_FOR_REFERENCED_PAGES:
-        for page_id in dict(importer.failed_creations).values():
+        for referenced, referrers in importer.ignored_referenced_page.items():
             response = requests.get(
                 f"{base_url}api/chooser/pages/",
-                params={'id': page_id, 'digest': digest_for_source(source, f'id={page_id}')})
+                params={'id': referenced, 'digest': digest_for_source(source, f'id={referenced}')})
             json_response = json.loads(response.content)
             items = json_response.get('items')
+            referenced_title = ''
             if items:
-                title = items[0].get('admin_display_title')
-                messages.add_message(
-                    request, messages.ERROR, f'Unable to fetch referenced page <strong>{title}</strong>')
+                referenced_title = items[0].get('admin_display_title')
+
+            referrer_titles = ''
+            for referer in referrers:
+                response = requests.get(
+                    f"{base_url}api/chooser/pages/",
+                    params={'id': referer, 'digest': digest_for_source(source, f'id={referer}')})
+                json_response = json.loads(response.content)
+                items = json_response.get('items')
+                if items:
+                    referrer_titles += items[0].get('admin_display_title') + ', '
+
+            referrer_titles = referrer_titles.rstrip(', ')
+            if referenced_title and referrer_titles:
+                messages.add_message(request, messages.ERROR,
+                                     f'Unable to fetch referenced page <strong>{referenced_title}</strong> '
+                                     f'in these pages: <strong>{referrer_titles}</strong>')
 
     if dest_page_id:
         return redirect('wagtailadmin_explore', dest_page_id)
